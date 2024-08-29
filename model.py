@@ -78,7 +78,7 @@ def answer(question, tools, score_threshold=0.50):
     if not context:
         return "No context found."
     context = " ".join(context.values())
-    print("context ",context)
+    # print("context ",context)
     # Get the answer using the QA model via Hugging Face Inference API
     result = query_huggingface_api("google-bert/bert-large-uncased-whole-word-masking-finetuned-squad", {
         "inputs": {
