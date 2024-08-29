@@ -30,7 +30,7 @@ class Query(BaseModel):
 @app.post("/ask/")
 async def ask_question(query: Query):
     try:
-        ans = answer(query.question, models['tools'], models['qa'], models['ranker'])
+        ans = answer(query.question, models['tools'])
         return {"answer": ans}
     except Exception as e:
         logging.error(f"Exception occurred: {e}", exc_info=True)

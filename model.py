@@ -1,14 +1,24 @@
-from transformers import pipeline
+import requests
 from langchain_community.tools import WikipediaQueryRun, ArxivQueryRun
 from langchain_community.utilities import WikipediaAPIWrapper, ArxivAPIWrapper
-from sentence_transformers import SentenceTransformer, util
+import numpy as np
 import tensorflow as tf
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+api_key = os.getenv('hf_key')
+HEADERS = {"Authorization": f"Bearer {api_key}"}
+ranker_model = "sentence-transformers/all-MiniLM-L6-v2"
+Question_answer = "google-bert/bert-large-uncased-whole-word-masking-finetuned-squad"
+
+# Define the function to query the Hugging Face Inference API
+def query_huggingface_api(model_name, payload):
+    API_URL = f"https://api-inference.huggingface.co/models/{model_name}"
+    response = requests.post(API_URL, headers=HEADERS, json=payload)
+    return response.json()
 
 def load_models():
-    # Load the QA pipeline and the sentence transformer model
-    question_answerer = pipeline("question-answering", model="google-bert/bert-large-uncased-whole-word-masking-finetuned-squad")
-    ranker = SentenceTransformer('all-MiniLM-L6-v2')
-    
     # Initialize the API wrappers with specific configurations
     wiki_api_wrapper = WikipediaAPIWrapper(top_k_result=5, doc_content_chars_max=10000)
     wiki_tool = WikipediaQueryRun(api_wrapper=wiki_api_wrapper)
@@ -19,9 +29,8 @@ def load_models():
     tools = [wiki_tool, arxiv_tool]
     
     return {
-        "qa": question_answerer,
         "tools": tools,
-        "ranker": ranker
+        # Models are no longer loaded locally, so we don't return them here
     }
 
 def get_responses_from_tools(question, tools):
@@ -33,72 +42,48 @@ def get_responses_from_tools(question, tools):
             responses.append(result)  # Append the result string to the list
     return responses
 
-def rank_responses(question, responses, ranker):
-    # Encode the question and the responses
-    question_embedding = ranker.encode([question])
-    response_embeddings = ranker.encode(responses)
-
-    # Compute cosine similarity between the question and each response
-    cosine_similarities = -tf.keras.losses.cosine_similarity(question_embedding, response_embeddings)
-    cosine_similarities = cosine_similarities.numpy().tolist()
-
-    output = {
-        cosine_similarities[i]: responses[i]
-        for i in range(len(responses))
+def rank_responses(question, responses):
+    
+    payload = {
+        "inputs": {
+            "source_sentence": question,
+            "sentences": list(responses)
+        }
     }
-    # Sort the responses by their score in descending order
-    sorted_output = dict(sorted(output.items(), key=lambda item: item[0], reverse=True))
-    return sorted_output
+    # Encode the question and the responses using the Hugging Face API
+    result = query_huggingface_api(ranker_model, payload)
+    
+    ranked_responses = {score: response for score, response in zip(result, responses)}
+    return ranked_responses
 
-
-def process_ranked_responses(question, tools, ranker, score_threshold=0.3):
+def process_ranked_responses(question, tools, score_threshold=0.3):
     # Get responses from tools
     responses = get_responses_from_tools(question, tools)
     if not responses:
         return None
-    
     # Rank the responses
-    ranked_responses = rank_responses(question, responses, ranker)
+    ranked_responses = rank_responses(question, responses)
     # Filter responses by score threshold
-    responses_above_threshold = ""
-    for score,text in ranked_responses.items():
-        if score >= score_threshold:
-            responses_above_threshold += text + "\n\n"  # Adding newline for separation
+    responses_above_threshold = {score: response for score, response in ranked_responses.items() if score > score_threshold}
     
     # Combine selected texts into a single string
     if responses_above_threshold:
-        combined_context = "".join(responses_above_threshold)
-        return combined_context
+        return responses_above_threshold  # Remove trailing newlines
     else:
         return None
 
-
-def answer(question, tools, question_answerer, ranker, score_threshold=0.50):
+def answer(question, tools, score_threshold=0.50):
     # Process responses and rank them
-    context = process_ranked_responses(question, tools, ranker, score_threshold)
-    # print(context)
-    # print(type(context))
+    context = process_ranked_responses(question, tools, score_threshold)
     if not context:
         return "No context found."
-    
-    # Get the answer using the QA pipeline
-    # print(question)
-    # print(type(question))
-    result = question_answerer(question=question, context=context)
-    
-    
-    # Handle the case where the result might be a list or a dictionary
-    if isinstance(result, list):
-        if result:  # Check if the list is not empty
-            result = result[0]
-        else:
-            return "No answer found."
-    
-    # Check if the result is a dictionary and contains the 'answer' key
-    if isinstance(result, dict) and 'answer' in result:
-        return result['answer']
-    
-    # If the result is not in the expected format, return a default message
-    return "No valid answer found."
-
-
+    context = " ".join(context.values())
+    print("context ",context)
+    # Get the answer using the QA model via Hugging Face Inference API
+    result = query_huggingface_api("google-bert/bert-large-uncased-whole-word-masking-finetuned-squad", {
+        "inputs": {
+            "question": question,
+            "context": context
+        }
+    })
+    return result["answer"]
