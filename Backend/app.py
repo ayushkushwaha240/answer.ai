@@ -5,7 +5,7 @@ import uvicorn
 import logging
 
 # Replace with the module where your model is defined
-from model import load_models, answer
+from Backend.model import load_models, answer
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

@@ -1,0 +1,19 @@
+{
+    "manifest_version": 3,
+    "name": "RAG Pipeline Query",
+    "version": "1.0",
+    "description": "Send a query to a RAG pipeline and display the answer.",
+    "permissions": [
+    "activeTab",
+    "scripting"
+    ],
+    "background": {
+    "service_worker": "background.js"
+    },
+    "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+        "16": "16x16-icon-45606.png"
+    }
+    }
+}
